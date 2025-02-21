@@ -15,19 +15,19 @@
 from verl import DataProto
 from verl.utils.reward_score import _default_compute_score
 import torch
+from .base import BaseRewardManager
 
 
-class NaiveRewardManager:
-    """The reward manager.
-    """
+class NaiveRewardManager(BaseRewardManager):
+    """The naive reward manager with data logging capability."""
 
-    def __init__(self, tokenizer, num_examine, compute_score=None) -> None:
-        self.tokenizer = tokenizer
-        self.num_examine = num_examine  # the number of batches of decoded responses to print to the console
-        self.compute_score = compute_score or _default_compute_score
+    def __init__(self, tokenizer, num_examine, compute_score=None, config=None) -> None:
+        super().__init__(tokenizer, num_examine, compute_score, config)
 
     def __call__(self, data: DataProto):
         """We will expand this function gradually based on the available datasets"""
+        # Get current step from data meta info if available
+        current_step = data.meta_info.get('global_steps', None)
 
         # If there is rm score, we directly return rm score. Otherwise, we compute via rm_score_fn
         if 'rm_scores' in data.batch.keys():
@@ -52,6 +52,8 @@ class NaiveRewardManager:
             valid_response_ids = response_ids[:valid_response_length]
 
             # decode
+            prompt_str = self.tokenizer.decode(valid_prompt_ids)
+            response_str = self.tokenizer.decode(valid_response_ids)
             sequences = torch.cat((valid_prompt_ids, valid_response_ids))
             sequences_str = self.tokenizer.decode(sequences)
 
@@ -65,6 +67,17 @@ class NaiveRewardManager:
                 ground_truth=ground_truth,
             )
             reward_tensor[i, valid_response_length - 1] = score
+
+            # 记录样本数据，添加step信息
+            self.log_sample(
+                prompt_str=prompt_str,
+                response_str=response_str,
+                ground_truth=ground_truth,
+                data_source=data_source,
+                score=score,
+                full_sequence=sequences_str,
+                step=current_step  # 添加step信息
+            )
 
             if data_source not in already_print_data_sources:
                 already_print_data_sources[data_source] = 0

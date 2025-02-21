@@ -15,6 +15,7 @@
 
 
 def _default_compute_score(data_source, solution_str, ground_truth):
+    
     if data_source == 'openai/gsm8k':
         from . import gsm8k
         res = gsm8k.compute_score(solution_str, ground_truth)
@@ -30,8 +31,17 @@ def _default_compute_score(data_source, solution_str, ground_truth):
     elif data_source in ['codecontests', 'apps', 'codeforces', 'taco']:
         from . import prime_code
         res = prime_code.compute_score(solution_str, ground_truth, continuous=True)
+    elif data_source == 'numina_math':
+        from . import numina_math
+        res = numina_math.compute_score(solution_str, ground_truth)
+    elif data_source == 'A1_innovation':
+        from . import paper_cot_A1
+        res = paper_cot_A1.compute_score(solution_str, ground_truth)
+    elif data_source == 'llm_smac':
+        from . import reward_compute_llm_smac
+        res = reward_compute_llm_smac.compute_score(solution_str, ground_truth)
     else:
-        raise NotImplementedError
+        raise NotImplementedError(f"Unsupported data_source: {data_source}")
 
     if isinstance(res, (int, float, bool)):
         return float(res)

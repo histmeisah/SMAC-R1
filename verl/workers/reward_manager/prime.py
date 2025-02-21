@@ -20,6 +20,7 @@ import torch
 
 from verl import DataProto
 from verl.utils.reward_score import _default_compute_score
+from .base import BaseRewardManager
 
 
 async def single_compute_score(evaluation_func, completion, reference, task, executor, timeout=300.):
@@ -74,25 +75,22 @@ async def parallel_compute_score_async(evaluation_func, completions, references,
     return scores
 
 
-class PrimeRewardManager:
-    """
-    The Reward Manager used in https://github.com/PRIME-RL/PRIME
-    """
+class PrimeRewardManager(BaseRewardManager):
+    """The Prime reward manager with data logging capability."""
 
-    def __init__(self, tokenizer, num_examine, compute_score=None) -> None:
-        self.tokenizer = tokenizer
-        self.num_examine = num_examine  # the number of batches of decoded responses to print to the console
-        self.compute_score = compute_score or _default_compute_score
+    def __init__(self, tokenizer, num_examine, compute_score=None, config=None) -> None:
+        super().__init__(tokenizer, num_examine, compute_score, config)
 
     def __call__(self, data: DataProto):
         """We will expand this function gradually based on the available datasets"""
+        # Get current step from data meta info if available
+        current_step = data.meta_info.get('global_steps', None)
 
-        # If there is rm score, we directly return rm score. Otherwise, we compute via rm_score_fn
+        # If there is rm score, we directly return rm score
         if 'rm_scores' in data.batch.keys():
             return data.batch['rm_scores']
 
         reward_tensor = torch.zeros_like(data.batch['responses'], dtype=torch.float32)
-
         already_print_data_sources = {}
 
         # batched scoring
@@ -101,34 +99,47 @@ class PrimeRewardManager:
 
         response_ids = data.batch['responses']
         valid_response_length = data.batch['attention_mask'][:, prompt_length:].sum(dim=-1)
+        
+        # 解码序列
+        prompt_strs = self.tokenizer.batch_decode(prompt_ids, skip_special_tokens=True)
+        response_strs = self.tokenizer.batch_decode(response_ids, skip_special_tokens=True)
         sequences_str = self.tokenizer.batch_decode(response_ids, skip_special_tokens=True)
+        
         ground_truth = [data_item.non_tensor_batch['reward_model']['ground_truth'] for data_item in data]
         data_sources = data.non_tensor_batch['data_source']
 
-        assert len(sequences_str) == len(ground_truth) == len(data_sources)
         try:
             scores = asyncio.run(
                 parallel_compute_score_async(self.compute_score,
-                                             sequences_str,
-                                             ground_truth,
-                                             data_sources,
-                                             num_processes=64))
-        except asyncio.TimeoutError as e:
-            print('Global timeout in reward computing! Setting all as 0.')
-            scores = [0. for _ in range(len(sequences_str))]
-        except Exception as e:
-            print(f"Unexpected error in batched reward computing. Setting all as 0.: {e}")
+                                          sequences_str,
+                                          ground_truth,
+                                          data_sources,
+                                          num_processes=64))
+        except (asyncio.TimeoutError, Exception) as e:
+            print(f'Error in reward computing: {e}. Setting all scores to 0.')
             scores = [0. for _ in range(len(sequences_str))]
 
         for i in range(len(data)):
             data_source = data_sources[i]
-            reward_tensor[i, valid_response_length[i].item() - 1] = scores[i]
+            score = scores[i]
+            reward_tensor[i, valid_response_length[i].item() - 1] = score
+
+            # 记录样本数据，添加step信息
+            self.log_sample(
+                prompt_str=prompt_strs[i],
+                response_str=response_strs[i],
+                ground_truth=ground_truth[i],
+                data_source=data_source,
+                score=score,
+                full_sequence=sequences_str[i],
+                step=current_step  # 添加step信息
+            )
 
             if data_source not in already_print_data_sources:
                 already_print_data_sources[data_source] = 0
 
             if already_print_data_sources[data_source] < self.num_examine:
                 already_print_data_sources[data_source] += 1
-                print(sequences_str)
+                print(sequences_str[i])
 
         return reward_tensor
