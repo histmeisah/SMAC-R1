@@ -25,7 +25,7 @@ pip install -r requirements.txt
 
 位于：/verl/examples/data_preprocess/data/sc2_instruction/train.parquet   ；  verl/examples/data_preprocess/data/sc2_instruction/test.parquet
 
-原始实现是
+原始数据是：```examples/data_preprocess/smac_instruction_dataset.json```
 ## 训练bash脚本
 ```bash
 set -x
