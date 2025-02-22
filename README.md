@@ -15,11 +15,7 @@ pip install -r requirements.txt
 
 ### 模型与游戏
 
-基础模型与星际争霸2 linux版本：
-
-通过网盘分享的文件：qwen2.5-dpo等2个文件
-链接: https://pan.baidu.com/s/1HM_DRzigYHWiSnmxdh-UDA 提取码: urey 
---来自百度网盘超级会员v4的分享
+在微信群里
 
 ### 训练数据
 
